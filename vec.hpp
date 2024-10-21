@@ -148,7 +148,7 @@ template <typename T> struct Vec3 {
 protected:
   Vec3<T> cross(Vec3 const &rhs) const {
     return {this->y * rhs.z - this->z * rhs.y,
-            -(this->x * rhs.z - this->z * rhs.x),
+            this->x * rhs.z - this->z * rhs.x,
             this->x * rhs.y - this->y * rhs.x};
   }
 };
@@ -163,8 +163,24 @@ template <typename T> struct P3 : public Vec3<T> {
 template <typename T> struct Dir3 : public Vec3<T> {
   OPERATORS_DIR(P3<T>, Dir3<T>, Del3<T>);
 
-  Del3<T> cross(Del3<T> const &rhs) const { return {cross(rhs)}; }
-  Del3<T> cross(Dir3<T> const &rhs) const { return {cross(rhs)}; }
+  Del3<T> cross(Del3<T> const &rhs) const { return {Vec3<T>::cross(rhs)}; }
+  Del3<T> cross(Dir3<T> const &rhs) const { return {Vec3<T>::cross(rhs)}; }
+
+  struct Relatives {
+    Dir3<T> fwd, right, up;
+  };
+
+  Relatives relatives(bool pitch_up = true) const {
+    if (fabs(this->x) < 1e-6 && fabs(this->y) < 1e-6) {
+      // pitch 90 degrees up/down from identity
+      if (pitch_up) {
+        return {*this, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}};
+      }
+      return {*this, {0.0, -1.0, 0.0}, {-this->z, 0.0, 0.0}};
+    }
+    auto const right = Del3<T>{this->y, this->x, 0.0}.norm();
+    return {*this, right, this->cross(right).norm()};
+  }
 
   Dir2<T> as2d() { return Del2<T>{this->x, this->y}.norm(); }
 };
@@ -199,26 +215,27 @@ template <typename T> struct Del2 : public Vec2<T> {
 };
 
 // represents a point in Space
-template <typename T = f64> math::P2<T> point(T const &x, T const &y) {
+template <typename T = f64> math::P2<T> inline point(T const &x, T const &y) {
   return {x, y};
 }
 
 template <typename T = f64>
-math::P3<T> point(T const &x, T const &y, T const &z) {
+math::P3<T> inline point(T const &x, T const &y, T const &z) {
   return {x, y, z};
 }
 
 template <typename T = f64>
-math::P4<T> point(T const &x, T const &y, T const &z, T const &w) {
+math::P4<T> inline point(T const &x, T const &y, T const &z, T const &w) {
   return {x, y, z, w};
 }
 
 // Anything that represents something relative from a Point
-template <typename T = f64> Del3<T> dir(T const &x, T const &y) {
+template <typename T = f64> Del3<T> inline dir(T const &x, T const &y) {
   return {x, y};
 }
 
-template <typename T = f64> Del3<T> dir(T const &x, T const &y, T const &z) {
+template <typename T = f64>
+Del3<T> inline dir(T const &x, T const &y, T const &z) {
   return {x, y, z};
 }
 } // namespace math
