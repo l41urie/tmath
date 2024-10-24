@@ -1,173 +1,166 @@
 #pragma once
 #include "meta.hpp"
+#include <array>
 #include <cmath>
-#include <numeric>
 
 namespace math {
-// PX Represents a point in 3D-space
-// DirX Represents a Normalized Vector, length is guaranteed to be = 1
-// DelX Represents a Delta between 2 vectors
+/// Represents a Point in N-Dimensional space
+template <typename T, usize Dimensions> struct Point;
+/// Represents a Direction in N-Dimensional space.
+template <typename T, usize Dimensions> struct Direction;
+/// Represents the difference between 2 Points in N-Dimensional space
+template <typename T, usize Dimensions> struct Delta;
+/// Represents a 3d-plane
+template <typename T> struct Plane3D;
+template <typename T = f64>
+inline Plane3D<T> plane(Point<T, 3> origin, const Direction<T, 3> &fwd,
+                        const Direction<T, 3> &up);
 
-template <typename T = f64> struct Vec4;
-template <typename T = f64> struct P4;
-template <typename T = f64> struct Dir4;
-template <typename T = f64> struct Del4;
-
-template <typename T = f64> struct Vec3;
-template <typename T = f64> struct P3;
-template <typename T = f64> struct Dir3;
-template <typename T = f64> struct Del3;
-
-template <typename T = f64> struct Vec2;
-template <typename T = f64> struct P2;
-template <typename T = f64> struct Dir2;
-template <typename T = f64> struct Del2;
-
-// Base struct.
-template <typename T, usize SIZE> struct VecBase {
+namespace detail {
+template <typename T, usize M, usize N> struct MatBase {
   using NumberType = T;
-  static auto constexpr Size = SIZE;
-  T data[Size]{};
+  static auto constexpr SizeM = M;
+  static auto constexpr SizeN = N;
 
-  operator T const *() const { return data; }
-  operator T *() { return data; }
+  std::array<std::array<T, SizeN>, SizeM> data;
+
+  operator T const *() const { return (T const *)data.data(); }
+  operator T *() { return (T *)data.data(); }
 
 #define BASE_OP(name, op, arg)                                                 \
-  VecBase<T, SIZE> name(arg) const {                                           \
-    VecBase<T, SIZE> result;                                                   \
-    for (usize i = 0; i < SIZE; ++i)                                           \
-      result[i] = this->data[i] op;                                            \
+  MatBase<T, M, N> name(arg) const {                                           \
+    MatBase<T, M, N> result;                                                   \
+    for (usize i = 0; i < M; ++i)                                              \
+      for (usize j = 0; j < N; ++j)                                            \
+        result.data[i][j] = this->data[i][j] op;                               \
     return result;                                                             \
   }
 
-  BASE_OP(hadamard, *rhs.data[i], VecBase const &rhs);
-  BASE_OP(sub, -rhs.data[i], VecBase const &rhs);
-  BASE_OP(add, +rhs.data[i], VecBase const &rhs);
+  BASE_OP(hadamard, *rhs.data, MatBase const &rhs);
+  BASE_OP(sub, -rhs.data[i][j], MatBase const &rhs);
+  BASE_OP(add, +rhs.data[i][j], MatBase const &rhs);
 
   BASE_OP(scale, *scalar, T const &scalar);
   BASE_OP(divide, / scalar, T const &scalar);
 
-  T l1norm() const { return std::accumulate(data, data + Size, (T)0); }
-
-  T dot(VecBase const &rhs) const { return this->hadamard(rhs).l1norm(); }
-
-  T len_sqr() const { return dot(*this); }
-  T len() const { return std::sqrt(len_sqr()); }
-
-  bool shorter(T const &scalar) const { return len_sqr() < (scalar * scalar); }
-  bool shorter(VecBase const &rhs) const { return len_sqr() < rhs.len_sqr(); }
-
-  VecBase<T, SIZE> norm() const { return divide(len()); }
-};
-
-// clang-format off
-#define OPERATOR(in, out, op, fn) out operator op (in const &rhs) const { return {this->data. fn (rhs.data)}; }
-#define OPERATOR_ASSIGN(in, op, fn) void operator op (in const &rhs) { this->data = this->data. fn (rhs.data); }
-
-#define OPERATOR_PRIM(in, out, op, fn) out operator op (in const &rhs) const { return {this->data. fn (rhs)}; }
-#define OPERATOR_ASSIGN_PRIM(in, op, fn) void operator op (in const &rhs) { this->data = this->data. fn (rhs); }
-
-#define IMPLEMENT_LENGTH(del_type) \
-  T len_sqr() const { return this->data.len_sqr(); } \
-  T len() const { return this->data.len(); } \
-  OPERATOR(T, bool, <, shorter) \
-  OPERATOR(del_type, bool, <, shorter)
-
-#define IMPL_DOT(input) T dot(input const &rhs) const { return this->data.dot(rhs.data); }
-
-#define IMPL_NORM(out_dir, out_del) \
-  out_dir norm() const { return {this->data.norm()}; } \
-  out_del with_len(T const &scalar) const { return norm() * scalar; } \
-  \
-  Del3<T> clamped_to_len(T const &scalar) { \
-    if (this->data.shorter(scalar)) \
-      return *this; \
-    return with_len(scalar); \
+  T l1norm() const {
+    T result{};
+    for (usize i = 0; i < M; ++i)
+      for (usize j = 0; j < N; ++j)
+        result += std::abs(this->data[i][j]);
+    return result;
   }
 
-#define OPERATORS_POINT(p_type, dir_type, del_type) \
-  OPERATOR(p_type, del_type, -, sub); \
-  OPERATOR(del_type, p_type, -, sub); \
-  OPERATOR_ASSIGN(del_type, -=, sub); \
-  OPERATOR(del_type, p_type, +, add); \
-  OPERATOR_ASSIGN(del_type, +=, add); \
-  dir_type to(p_type const &rhs) { return (rhs - *this).norm(); }
+  // Given a 1xN matrix, this is equivalent to computing the dot product
+  T frobenius_inner_product(MatBase<T, M, N> const &rhs) const {
+    T result{};
+    for (usize i = 0; i < M; ++i)
+      for (usize j = 0; j < N; ++j)
+        result += this->data[i][j] * rhs.data[i][j];
+    return result;
+  }
 
-/*technically, division could be considered valid
-but doing this is silly and most likely an error
-*/
-#define OPERATORS_DIR(p_type, dir_type, del_type) \
-  OPERATOR_PRIM(T, del_type, *, scale); \
-  IMPL_DOT(del_type); \
-  IMPL_DOT(dir_type);
+  // also "squared magnitude/length"
+  T frobenius_norm_sq() const { return frobenius_inner_product(*this); }
+};
 
+template <typename T, usize Dimensions> struct VecData {
+  MatBase<T, 1, Dimensions> data{};
+};
 
-#define OPERATORS_DEL(p_type, dir_type, del_type)\
-  OPERATOR(del_type, del_type, +, add); \
-  OPERATOR(p_type, p_type, +, add); \
-  OPERATOR_ASSIGN(del_type, +=, add); \
-  OPERATOR_PRIM(T, del_type, *, scale); \
-  OPERATOR_ASSIGN_PRIM(T, *=, scale); \
-  OPERATOR_PRIM(T, del_type, /, divide); \
-  OPERATOR_ASSIGN_PRIM(T, /=, divide); \
-  IMPLEMENT_LENGTH(del_type); \
-  IMPL_DOT(del_type); \
-  IMPL_NORM(dir_type, del_type);
-
-// clang-format on
-
-// Definitions for 4d-space
-template <typename T> struct Vec4 {
-  using NumberType = T;
+template <typename T> struct VecData<T, 2> {
   union {
-    VecBase<T, 4> data;
-    T x, y, z, w;
+    MatBase<T, 1, 2> data{};
+    struct {
+      T x, y;
+    };
   };
 };
 
-template <typename T> struct P4 : public Vec4<T> {
-  OPERATORS_POINT(P4<T>, Dir4<T>, Del4<T>);
-};
-
-template <typename T> struct Dir4 : public Vec4<T> {
-  OPERATORS_DIR(P4<T>, Dir4<T>, Del4<T>);
-};
-
-template <typename T> struct Del4 : public Vec4<T> {
-  OPERATORS_DEL(P4<T>, Dir4<T>, Del4<T>);
-};
-
-// Definitions for 3d-space
-template <typename T> struct Vec3 {
-  using NumberType = T;
+template <typename T> struct VecData<T, 3> {
   union {
-    VecBase<T, 3> data;
-    T x, y, z;
+    MatBase<T, 1, 3> data{};
+    struct {
+      T x, y, z;
+    };
   };
 
 protected:
-  Vec3<T> cross(Vec3 const &rhs) const {
+#define IMPL_CROSS(in)                                                         \
+  Vtd::Del cross(in const &rhs) const { return {VecBase<T, 3>::cross({rhs})}; }
+
+  VecData<T, 3> cross(VecData<T, 3> const &rhs) const {
     return {this->y * rhs.z - this->z * rhs.y,
             this->x * rhs.z - this->z * rhs.x,
             this->x * rhs.y - this->y * rhs.x};
   }
 };
 
-template <typename T> struct P3 : public Vec3<T> {
-  OPERATORS_POINT(P3<T>, Dir3<T>, Del3<T>);
-
-  P2<T> as2d() { return {this->x, this->y}; }
-  // TODO: Projection stuff?
+template <typename T> struct VecData<T, 4> {
+  union {
+    MatBase<T, 1, 4> data{};
+    struct {
+      T x, y, z, w;
+    };
+  };
 };
 
-template <typename T> struct Dir3 : public Vec3<T> {
-  OPERATORS_DIR(P3<T>, Dir3<T>, Del3<T>);
+template <typename T, usize Dimensions>
+struct VecBase : public VecData<T, Dimensions> {
+  T &operator[](usize idx) { return this->data.data[0][idx]; }
+  T const &operator[](usize idx) const { return this->data.data[0][idx]; }
 
-  Del3<T> cross(Del3<T> const &rhs) const { return {Vec3<T>::cross(rhs)}; }
-  Del3<T> cross(Dir3<T> const &rhs) const { return {Vec3<T>::cross(rhs)}; }
+protected:
+  T dot(VecBase const &rhs) const {
+    return this->data.frobenius_inner_product(rhs.data);
+  }
+
+  T len_sqr() const { return this->data.frobenius_norm_sq(); }
+  T len() const { return std::sqrt(len_sqr()); }
+  VecBase<T, Dimensions> norm() const { return {this->data.divide(len())}; }
+};
+
+// Deliberately left empty, anything that can be applied to _ALL_ dimensions
+// directly goes into the struct
+template <typename T, usize Dimensions>
+struct PointBase : public VecBase<T, Dimensions> {};
+template <typename T, usize Dimensions>
+struct DirectionBase : public VecBase<T, Dimensions> {};
+template <typename T, usize Dimensions>
+struct DeltaBase : public VecBase<T, Dimensions> {};
+
+template <typename T, usize Dimensions> struct VecTypeDesc {
+  using P = Point<T, Dimensions>;
+  using Dir = Direction<T, Dimensions>;
+  using Del = Delta<T, Dimensions>;
+};
+
+// Specializations for some Dimensions that are commonly used.
+template <typename T> struct PointBase<T, 3> : public VecBase<T, 3> {
+  /// Projects this point onto a plane,
+  /// located at |org|, oriented by |u| and |v|
+  Point<T, 2> project(Point<T, 3> const &org, Direction<T, 3> const &u,
+                      Direction<T, 3> const &v) const {
+    auto d = (Point<T, 3>{*this} - org);
+    return d.project(u, v);
+  }
+
+  /// Projects this point onto a plane,
+  Point<T, 2> project(Plane3D<T> const &plane) const {
+    return project(plane.location, plane.u, plane.v);
+  }
+};
+
+template <typename T> struct DirectionBase<T, 3> : public VecBase<T, 3> {
+  using Vtd = VecTypeDesc<T, 3>;
+  IMPL_CROSS(Vtd::Dir);
 
   struct Relatives {
-    Dir3<T> fwd, right, up;
+    Direction<T, 3> fwd, right, up;
+
+    Plane3D<T> as_plane(Point<T, 3> const &location) const {
+      return plane(location, fwd, up);
+    }
   };
 
   Relatives relatives(bool pitch_up = true) const {
@@ -178,43 +171,131 @@ template <typename T> struct Dir3 : public Vec3<T> {
       }
       return {*this, {0.0, -1.0, 0.0}, {-this->z, 0.0, 0.0}};
     }
-    auto const right = Del3<T>{this->y, this->x, 0.0}.norm();
+    auto const right = Delta<T, 3>{this->y, this->x, 0.0}.norm();
     return {*this, right, this->cross(right).norm()};
   }
-
-  Dir2<T> as2d() { return Del2<T>{this->x, this->y}.norm(); }
 };
 
-template <typename T> struct Del3 : public Vec3<T> {
-  OPERATORS_DEL(P3<T>, Dir3<T>, Del3<T>);
+template <typename T> struct DeltaBase<T, 3> : public VecBase<T, 3> {
+  using Vtd = VecTypeDesc<T, 3>;
+  IMPL_CROSS(Vtd::Del);
 
-  Del3<T> cross(Del3<T> const &rhs) const { return Vec3<T>::cross(rhs); }
-  Del2<T> as2d() { return {this->x, this->y}; }
+  /// Projects a Delta onto a 2d plane oriented in U and V
+  Point<T, 2> project(Direction<T, 3> const &u,
+                      Direction<T, 3> const &v) const {
+    return {this->dot(u), this->dot(v)};
+  }
+};
+} // namespace detail
+
+// clang-format off
+#define OPERATOR(in, out, op, fn) out operator op (in const &rhs) const { return {this->data. fn (rhs.data)}; }
+#define OPERATOR_ASSIGN(in, op, fn) void operator op (in const &rhs) { this->data = this->data. fn (rhs.data); }
+#define OPERATOR_PRIM(in, out, op, fn) out operator op (in const &rhs) const { return {this->data. fn (rhs)}; }
+#define OPERATOR_ASSIGN_PRIM(in, op, fn) void operator op (in const &rhs) { this->data = this->data. fn (rhs); }
+#define IMPL_DOT(input) T dot(input const &rhs) const { return this->data.dot(rhs.data); }
+// clang-format on
+
+template <typename T, usize Dimensions>
+struct Point : public detail::PointBase<T, Dimensions> {
+  using Vtd = detail::VecTypeDesc<T, Dimensions>;
+
+  /// Lowers the dimension by discarding the last scalar.
+  Point<T, Dimensions - 1> flatten() {
+    Point<T, Dimensions - 1> result;
+    for (usize i = 0; i < Dimensions - 1; ++i)
+      result[i] = (*this)[i];
+    return result;
+  }
+
+  OPERATOR(Vtd::P, Vtd::Del, -, sub);
+  OPERATOR(Vtd::Del, Vtd::P, -, sub);
+  OPERATOR_ASSIGN(Vtd::Del, -=, sub);
+  OPERATOR(Vtd::Del, Vtd::P, +, add);
+  OPERATOR_ASSIGN(Vtd::Del, +=, add);
+
+  /// Returns the Direction to another point.
+  Vtd::Dir to(Vtd::P const &rhs) { return {(rhs - *this).norm()}; }
 };
 
-// Definitions for 2d-space
+template <typename T, usize Dimensions>
+struct Direction : public detail::DirectionBase<T, Dimensions> {
+  using Vtd = detail::VecTypeDesc<T, Dimensions>;
 
-template <typename T> struct Vec2 {
-  using NumberType = T;
-  union {
-    VecBase<T, 2> data;
-    T x, y;
-  };
+  /// Lowers the dimension by discarding the last scalar.
+  /// This correctly preserves The length
+  Direction<T, Dimensions - 1> flatten() {
+    Delta<T, Dimensions - 1> result;
+    for (usize i = 0; i < Dimensions - 1; ++i)
+      result[i] = (*this)[i];
+    return result.norm();
+  }
+
+  OPERATOR_PRIM(T, Vtd::Del, *, scale);
+  OPERATOR_PRIM(T, Vtd::Del, /, divide);
+
+  IMPL_DOT(Vtd::Del);
+  IMPL_DOT(Vtd::Dir);
 };
 
-template <typename T> struct P2 : public Vec2<T> {
-  OPERATORS_POINT(P2<T>, Dir2<T>, Del2<T>);
+template <typename T, usize Dimensions>
+struct Delta : public detail::DeltaBase<T, Dimensions> {
+  using Vtd = detail::VecTypeDesc<T, Dimensions>;
+
+  /// Lowers the dimension by discarding the last scalar.
+  /// The length changes here.
+  Delta<T, Dimensions - 1> flatten() {
+    Delta<T, Dimensions - 1> result;
+    for (usize i = 0; i < Dimensions - 1; ++i)
+      result[i] = (*this)[i];
+    return result;
+  }
+
+  OPERATOR(Vtd::Del, Vtd::Del, +, add);
+  OPERATOR(Vtd::P, Vtd::P, +, add);
+  OPERATOR_ASSIGN(Vtd::Del, +=, add);
+
+  OPERATOR_PRIM(T, Vtd::Del, *, scale);
+  OPERATOR_ASSIGN_PRIM(T, *=, scale);
+  OPERATOR_PRIM(T, Vtd::Del, /, divide);
+  OPERATOR_ASSIGN_PRIM(T, /=, divide);
+
+  using detail::VecBase<T, Dimensions>::len;
+  using detail::VecBase<T, Dimensions>::len_sqr;
+
+  OPERATOR(T, bool, <, shorter);
+  OPERATOR(Vtd::Del, bool, <, shorter);
+  OPERATOR(T, bool, >, longer);
+  OPERATOR(Vtd::Del, bool, >, longer);
+
+  IMPL_DOT(Vtd::Del);
+
+  /// Normalizes the Delta to a Direction, length is guaranteed to be 1
+  Vtd::Dir norm() const { return {detail::VecBase<T, Dimensions>::norm()}; }
+
+  /// Forces the length to a |scalar|.
+  Vtd::Del with_len(T const &scalar) const { return norm() * scalar; }
+
+  /// Ensures the length isn't longer than |scalar|
+  Vtd::Del clamped_to_len(T const &scalar) const {
+    return *this < scalar ? *this : with_len(scalar);
+  }
 };
 
-template <typename T> struct Dir2 : public Vec2<T> {
-  OPERATORS_DIR(P2<T>, Dir2<T>, Del2<T>);
+template <typename T> struct Plane3D {
+  Direction<T, 3> u, v;
+  Point<T, 3> location;
 };
 
-template <typename T> struct Del2 : public Vec2<T> {
-  OPERATORS_DEL(P2<T>, Dir2<T>, Del2<T>);
-};
+/// represents a point in Space
+template <typename T = f64> using P2 = Point<T, 2>;
+template <typename T = f64> using P3 = Point<T, 3>;
+template <typename T = f64> using P4 = Point<T, 4>;
 
-// represents a point in Space
+template <typename T = f64> using Del2 = Delta<T, 2>;
+template <typename T = f64> using Del3 = Delta<T, 3>;
+template <typename T = f64> using Del4 = Delta<T, 4>;
+
 template <typename T = f64> math::P2<T> inline point(T const &x, T const &y) {
   return {x, y};
 }
@@ -229,7 +310,7 @@ math::P4<T> inline point(T const &x, T const &y, T const &z, T const &w) {
   return {x, y, z, w};
 }
 
-// Anything that represents something relative from a Point
+/// Anything that represents something relative from a Point
 template <typename T = f64> Del3<T> inline dir(T const &x, T const &y) {
   return {x, y};
 }
@@ -237,5 +318,20 @@ template <typename T = f64> Del3<T> inline dir(T const &x, T const &y) {
 template <typename T = f64>
 Del3<T> inline dir(T const &x, T const &y, T const &z) {
   return {x, y, z};
+}
+
+template <typename T>
+inline Plane3D<T> plane(Point<T, 3> location, Direction<T, 3> const &fwd,
+                        Direction<T, 3> const &up) {
+  auto u = fwd.cross(up).norm();
+
+  // n = forward
+  // const auto u = forward.Cross( Vector( 0, 0, 1 ) ).Normalize();
+  // const auto v = u.Cross( n ).Normalize();
+  return Plane3D<T>{
+      .location = location,
+      .u = u,
+      .v = u.cross(up).norm(),
+  };
 }
 } // namespace math
