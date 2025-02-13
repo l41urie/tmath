@@ -178,7 +178,7 @@ template <typename T> struct DirectionBase<T, 3> : public VecBase<T, 3> {
 
   math::EulerAng<Radians<T>, XYZ> as_euler() {
     if (this->x == 0.0 && this->y == 0.0)
-      return {this->z > 0.0 ? -90.0 : 90.0, 0.0, 0.0};
+      return {this->z > 0.0 ? -(pi / 2.0) : (pi / 2.0), 0.0, 0.0};
 
     return {atan2f(-this->z, std::sqrt(this->x * this->x + this->y * this->y)),
             atan2f(this->y, this->x)};
