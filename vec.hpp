@@ -1,4 +1,5 @@
 #pragma once
+#include "angle.hpp"
 #include "meta.hpp"
 #include <array>
 #include <cmath>
@@ -173,6 +174,14 @@ template <typename T> struct DirectionBase<T, 3> : public VecBase<T, 3> {
     }
     auto const right = Delta<T, 3>{this->y, this->x, 0.0}.norm();
     return {*this, right, this->cross(right).norm()};
+  }
+
+  math::EulerAng<Radians<T>, XYZ> as_euler() {
+    if (this->x == 0.0 && this->y == 0.0)
+      return {this->z > 0.0 ? -90.0 : 90.0, 0.0, 0.0};
+
+    return {atan2f(-this->z, std::sqrt(this->x * this->x + this->y * this->y)),
+            atan2f(this->y, this->x)};
   }
 };
 
